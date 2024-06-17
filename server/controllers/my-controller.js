@@ -165,33 +165,33 @@ module.exports = ({ strapi }) => ({
   async restructureData(data, objectStructure) {
     return data.map((item) => {
       const restructuredItem = {};
-
+  
       // Restructure main data based on columns
-      for (const key of objectStructure.columns) {
+      objectStructure.columns.forEach((key) => {
         if (key in item) {
           restructuredItem[key] = item[key];
         }
-      }
-
+      });
+  
       // Restructure relation data based on the specified structure
       for (const key in objectStructure.relation) {
         if (key in item) {
-          const column = objectStructure.relation[key].column[0];
+          const columns = objectStructure.relation[key].columns;
           if (item[key] && typeof item[key] === "object") {
-            if (Array.isArray(item[key]) && item[key].length > 0) {
-              restructuredItem[key] = item[key]
-                .map((obj) => obj[column])
-                .join(" ");
-            } else {
-              restructuredItem[key] = item[key][column];
-            }
+            restructuredItem[key] = columns.map((column) => {
+              if (Array.isArray(item[key])) {
+                return item[key].map((obj) => obj[column]).join(", ");  // Join multiple column data with a comma
+              } else {
+                return item[key][column];  // Return single column data
+              }
+            }).join(" | ");  // Separate different columns with a vertical bar
           } else {
             // Handle the case where item[key] is not an object
             restructuredItem[key] = null; // Or handle it as needed
           }
         }
       }
-
+  
       return restructuredItem;
     });
   },
