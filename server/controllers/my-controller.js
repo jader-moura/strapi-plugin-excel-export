@@ -163,28 +163,36 @@ module.exports = ({ strapi }) => ({
     return restructuredObject;
   },
   async restructureData(data, objectStructure) {
-    return data.map((item) => {
+    console.log("Received data for restructuring:", data);  // Log the entire data array received
+    
+    return data.map((item, index) => {
+      console.log(`Processing item ${index}:`, item);  // Log each item being processed
       const restructuredItem = {};
-  
+    
       // Restructure main data based on columns
       objectStructure.columns.forEach((key) => {
         if (key in item) {
           restructuredItem[key] = item[key];
         }
       });
-  
+    
       // Restructure relation data based on the specified structure
       for (const key in objectStructure.relation) {
+        console.log(`Checking relation for key '${key}':`, item[key]);  // Log the relation part of the item
         if (key in item && item[key]) { // Check if item[key] is not null or undefined
           const columns = objectStructure.relation[key].columns;
           if (typeof item[key] === "object" && item[key] !== null) {
-            restructuredItem[key] = columns.map((column) => {
-              if (Array.isArray(item[key])) {
-                return item[key].map((obj) => obj ? obj[column] : '').join(", ");  // Join multiple column data with a comma, check if obj is not null
-              } else {
-                return item[key][column] || '';  // Return single column data or empty string if undefined
-              }
-            }).join(" | ");  // Separate different columns with a vertical bar
+            try {
+              restructuredItem[key] = columns.map((column) => {
+                if (Array.isArray(item[key])) {
+                  return item[key].map((obj) => obj ? obj[column] : '').join(", ");  // Join multiple column data with a comma, check if obj is not null
+                } else {
+                  return item[key][column] || '';  // Return single column data or empty string if undefined
+                }
+              }).join(" | ");  // Separate different columns with a vertical bar
+            } catch (error) {
+              console.error(`Error restructuring data for key '${key}':`, error);
+            }
           } else {
             restructuredItem[key] = ''; // Set to empty string if item[key] is not an object
           }
@@ -192,9 +200,11 @@ module.exports = ({ strapi }) => ({
           restructuredItem[key] = ''; // Set to empty string if key is not in item or item[key] is falsy
         }
       }
-  
+    
+      console.log(`Restructured item ${index}:`, restructuredItem);  // Log the restructured item
       return restructuredItem;
     });
   }
+  
   
 });
