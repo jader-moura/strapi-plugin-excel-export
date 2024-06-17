@@ -175,24 +175,26 @@ module.exports = ({ strapi }) => ({
   
       // Restructure relation data based on the specified structure
       for (const key in objectStructure.relation) {
-        if (key in item) {
+        if (key in item && item[key]) { // Check if item[key] is not null or undefined
           const columns = objectStructure.relation[key].columns;
-          if (item[key] && typeof item[key] === "object") {
+          if (typeof item[key] === "object" && item[key] !== null) {
             restructuredItem[key] = columns.map((column) => {
               if (Array.isArray(item[key])) {
-                return item[key].map((obj) => obj[column]).join(", ");  // Join multiple column data with a comma
+                return item[key].map((obj) => obj ? obj[column] : '').join(", ");  // Join multiple column data with a comma, check if obj is not null
               } else {
-                return item[key][column];  // Return single column data
+                return item[key][column] || '';  // Return single column data or empty string if undefined
               }
             }).join(" | ");  // Separate different columns with a vertical bar
           } else {
-            // Handle the case where item[key] is not an object
-            restructuredItem[key] = null; // Or handle it as needed
+            restructuredItem[key] = ''; // Set to empty string if item[key] is not an object
           }
+        } else {
+          restructuredItem[key] = ''; // Set to empty string if key is not in item or item[key] is falsy
         }
       }
   
       return restructuredItem;
     });
-  },
+  }
+  
 });
