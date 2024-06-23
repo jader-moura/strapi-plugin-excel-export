@@ -35,7 +35,7 @@ module.exports = {
       ],
       relation: {
         solution: {
-          column: ["title"],
+          columns: ["title", "description"],
         },
       },
       locale: "false",
