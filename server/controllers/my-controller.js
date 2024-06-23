@@ -119,8 +119,20 @@ module.exports = ({ strapi }) => ({
       for (const relationKey in objectStructure.relation) {
         objectStructure.relation[relationKey].columns.forEach((column) => {
           const nestedKey = `${relationKey}.${column}`;
-          const nestedValue = item[relationKey] ? item[relationKey][column] : '';
-          restructuredItem[nestedKey] = nestedValue;
+          // Check if the data under the relation key is an array of strings or objects
+          if (item[relationKey]) {
+            if (Array.isArray(item[relationKey])) {
+              // If it is an array, map over it to extract the column values
+              const values = item[relationKey].map(subItem => subItem ? subItem[column] : '').filter(Boolean);
+              restructuredItem[nestedKey] = values.join(', ');  // Join all values with a comma
+            } else {
+              // If it's a single object, directly assign the value
+              const nestedValue = item[relationKey][column] || '';
+              restructuredItem[nestedKey] = nestedValue;
+            }
+          } else {
+            restructuredItem[nestedKey] = '';  // Set to empty if the key does not exist or is null
+          }
         });
       }
 
