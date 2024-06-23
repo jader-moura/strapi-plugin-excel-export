@@ -2,29 +2,6 @@
 const ExcelJS = require("exceljs");
 
 module.exports = ({ strapi }) => ({
-  async getDropDownData() {
-    let excel = strapi.config.get("excel");
-    let dropDownValues = [];
-    let array = Object.keys(excel?.config);
-
-    strapi?.db?.config?.models?.forEach((element) => {
-      if (element?.kind == "collectionType") {
-        array?.forEach((data) => {
-          if (element?.uid?.startsWith(data)) {
-            dropDownValues.push({
-              label: element?.info?.displayName,
-              value: element?.uid,
-            });
-          }
-        });
-      }
-    });
-    dropDownValues.sort((a, b) => a.label.localeCompare(b.label));
-    return {
-      data: dropDownValues,
-    };
-  },
-
   async getTableData(ctx) {
     let excel = strapi.config.get("excel");
     let uid = ctx?.query?.uid;
@@ -41,7 +18,7 @@ module.exports = ({ strapi }) => ({
 
     let header = [
       ...excel?.config[uid]?.columns,
-      ...Object.keys(excel?.config[uid]?.relation).map(rKey => excel.config[uid].relation[rKey].columns).flat(),
+      ...Object.keys(excel?.config[uid]?.relation).flatMap(rKey => excel.config[uid].relation[rKey].columns.map(col => `${rKey}.${col}`)),
     ];
 
     let where = {};
@@ -69,16 +46,17 @@ module.exports = ({ strapi }) => ({
       let query = await this.restructureObject(excel?.config[uid], uid);
       let response = await strapi.db.query(uid).findMany(query);
       let excelData = await this.restructureData(response, excel?.config[uid]);
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Sheet 1");
 
       let headers = [
         ...excel?.config[uid]?.columns,
-        ...Object.keys(excel?.config[uid]?.relation).map(rKey => excel.config[uid].relation[rKey].columns).flat(),
+        ...Object.keys(excel?.config[uid]?.relation).flatMap(rKey => excel.config[uid].relation[rKey].columns.map(col => `${rKey}.${col}`)),
       ];
 
       let headerRestructure = headers.map(element =>
-        element.split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")
+        element.replace(/_/g, " ").split('.').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(".")
       );
 
       worksheet.columns = headers.map((header, index) => ({
@@ -100,7 +78,8 @@ module.exports = ({ strapi }) => ({
       ];
 
       const buffer = await workbook.xlsx.writeBuffer();
-      return buffer;
+      ctx.response.type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      ctx.response.body = buffer;
     } catch (error) {
       console.error("Error writing buffer:", error);
     }
@@ -115,6 +94,7 @@ module.exports = ({ strapi }) => ({
         locale: "en",
       };
     }
+
     let orderBy = {
       id: "asc",
     };
@@ -130,7 +110,7 @@ module.exports = ({ strapi }) => ({
 
     for (const key in inputObject.relation) {
       restructuredObject.populate[key] = {
-        select: inputObject.relation[key].columns,
+        select: inputObject.relation[key].columns.map(col => `${key}.${col}`),
       };
     }
 
@@ -142,30 +122,15 @@ module.exports = ({ strapi }) => ({
       const restructuredItem = {};
 
       objectStructure.columns.forEach((key) => {
-        if (key in item) {
-          restructuredItem[key] = item[key];
-        }
+        restructuredItem[key] = item[key];
       });
 
-      for (const key in objectStructure.relation) {
-        if (key in item && item[key]) {
-          const columns = objectStructure.relation[key].columns;
-          if (typeof item[key] === "object" && item[key] !== null) {
-            try {
-              restructuredItem[key] = columns.map(column => {
-                return Array.isArray(item[key])
-                  ? item[key].map(obj => obj ? obj[column] : '').join(", ")
-                  : item[key][column] || '';
-              }).join(" | ");
-            } catch (error) {
-              console.error(`Error restructuring data for key '${key}':`, error);
-            }
-          } else {
-            restructuredItem[key] = '';
-          }
-        } else {
-          restructuredItem[key] = '';
-        }
+      for (const relationKey in objectStructure.relation) {
+        objectStructure.relation[relationKey].columns.forEach((column) => {
+          const nestedKey = `${relationKey}.${column}`;
+          const nestedValue = item[relationKey] ? item[relationKey][column] : '';
+          restructuredItem[nestedKey] = nestedValue;
+        });
       }
 
       return restructuredItem;
