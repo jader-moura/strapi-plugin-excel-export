@@ -19,13 +19,12 @@ module.exports = ({ strapi }) => ({
         });
       }
     });
-    // Sort dropDownValues alphabetically by label in ascending order
     dropDownValues.sort((a, b) => a.label.localeCompare(b.label));
-
     return {
       data: dropDownValues,
     };
   },
+
   async getTableData(ctx) {
     let excel = strapi.config.get("excel");
     let uid = ctx?.query?.uid;
@@ -42,12 +41,11 @@ module.exports = ({ strapi }) => ({
 
     let header = [
       ...excel?.config[uid]?.columns,
-      ...Object.keys(excel?.config[uid]?.relation),
+      ...Object.keys(excel?.config[uid]?.relation).map(rKey => excel.config[uid].relation[rKey].columns).flat(),
     ];
 
     let where = {};
-
-    if (excel?.config[uid]?.locale == "true") {
+    if (excel?.config[uid]?.locale === "true") {
       where = {
         locale: "en",
       };
@@ -57,71 +55,62 @@ module.exports = ({ strapi }) => ({
 
     let tableData = await this.restructureData(response, excel?.config[uid]);
 
-    // Sort dropDownValues alphabetically by label in ascending order
-
     return {
       data: tableData,
       count: count,
       columns: header,
     };
   },
+
   async downloadExcel(ctx) {
     try {
       let excel = strapi.config.get("excel");
       let uid = ctx?.query?.uid;
-  
       let query = await this.restructureObject(excel?.config[uid], uid);
       let response = await strapi.db.query(uid).findMany(query);
       let excelData = await this.restructureData(response, excel?.config[uid]);
-  
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Sheet 1");
-  
-      // Dynamically determine column headers
+
       let headers = [
         ...excel?.config[uid]?.columns,
-        ...[].concat(...Object.keys(excel?.config[uid]?.relation).map(key => {
-          const relation = excel?.config[uid]?.relation[key];
-          const columns = relation.columns || [relation.column];  // Handle both 'columns' and 'column'
-          return columns.map(column => `${key}_${column}`);
-        }))
+        ...Object.keys(excel?.config[uid]?.relation).map(rKey => excel.config[uid].relation[rKey].columns).flat(),
       ];
-  
-      // Transform headers to human-readable format
-      let headerRestructure = headers.map(header => {
-        return header.split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
-      });
-  
-      // Define worksheet columns with headers
+
+      let headerRestructure = headers.map(element =>
+        element.split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")
+      );
+
       worksheet.columns = headers.map((header, index) => ({
         header: headerRestructure[index],
         key: header,
         width: 20,
       }));
-  
-      // Add data to the worksheet
-      excelData.forEach(row => {
+
+      excelData?.forEach(row => {
         worksheet.addRow(row);
       });
-  
-      // Additional formatting
+
       worksheet.columns.forEach(column => {
         column.alignment = { wrapText: true };
       });
-      worksheet.views = [{ state: "frozen", xSplit: 0, ySplit: 1, topLeftCell: "A" }];
-  
+
+      worksheet.views = [
+        { state: "frozen", xSplit: 0, ySplit: 1, topLeftCell: "A2" },
+      ];
+
       const buffer = await workbook.xlsx.writeBuffer();
       return buffer;
     } catch (error) {
       console.error("Error writing buffer:", error);
     }
   },
-  
+
   async restructureObject(inputObject, uid, limit, offset) {
     let excel = strapi.config.get("excel");
-  
+
     let where = {};
-    if (excel?.config[uid]?.locale == "true") {
+    if (excel?.config[uid]?.locale === "true") {
       where = {
         locale: "en",
       };
@@ -129,7 +118,7 @@ module.exports = ({ strapi }) => ({
     let orderBy = {
       id: "asc",
     };
-  
+
     const restructuredObject = {
       select: inputObject.columns || "*",
       populate: {},
@@ -138,45 +127,48 @@ module.exports = ({ strapi }) => ({
       limit: limit,
       offset: offset,
     };
-  
+
     for (const key in inputObject.relation) {
       restructuredObject.populate[key] = {
-        select: inputObject.relation[key].columns || inputObject.relation[key].column,  // Ensure both 'columns' and 'column' are handled
+        select: inputObject.relation[key].columns,
       };
     }
-  
+
     return restructuredObject;
   },
-  
+
   async restructureData(data, objectStructure) {
     return data.map((item) => {
       const restructuredItem = {};
-  
-      // Handle main data columns
+
       objectStructure.columns.forEach((key) => {
         if (key in item) {
           restructuredItem[key] = item[key];
         }
       });
-  
-      // Handle relations
+
       for (const key in objectStructure.relation) {
-        const relation = objectStructure.relation[key];
-        const columns = relation.columns || [relation.column]; // Ensure both 'columns' and 'column' are handled as arrays
-        if (item[key] && typeof item[key] === "object") {
-          columns.forEach(column => {
-            const value = Array.isArray(item[key]) ? item[key].map(obj => obj[column] || '').join(", ") : item[key][column] || '';
-            restructuredItem[`${key}_${column}`] = value; // Create a unique key for each column in the relation
-          });
+        if (key in item && item[key]) {
+          const columns = objectStructure.relation[key].columns;
+          if (typeof item[key] === "object" && item[key] !== null) {
+            try {
+              restructuredItem[key] = columns.map(column => {
+                return Array.isArray(item[key])
+                  ? item[key].map(obj => obj ? obj[column] : '').join(", ")
+                  : item[key][column] || '';
+              }).join(" | ");
+            } catch (error) {
+              console.error(`Error restructuring data for key '${key}':`, error);
+            }
+          } else {
+            restructuredItem[key] = '';
+          }
         } else {
-          columns.forEach(column => {
-            restructuredItem[`${key}_${column}`] = ''; // Set empty if no data
-          });
+          restructuredItem[key] = '';
         }
       }
-  
+
       return restructuredItem;
     });
   }
-  
 });
